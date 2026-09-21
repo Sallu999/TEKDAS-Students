@@ -1,0 +1,166 @@
+---
+title: "Laporan Proyek Teknologi Cerdas"
+subtitle: "Prediksi Customer Churn: Business Intelligence, Machine Learning, dan LLM Grounded"
+author: "Mahasiswa Teknologi Cerdas"
+date: "21 September 2026"
+lang: id
+format:
+  pdf:
+    geometry:
+      - margin=22mm
+    toc: true
+    number-sections: true
+execute:
+  echo: false
+  warning: false
+---
+
+# Ringkasan
+
+Proyek ini membangun alur analitik end-to-end untuk membantu tim retensi pelanggan mengidentifikasi risiko *customer churn*. Sistem menggabungkan empat tabel data e-commerce, eksplorasi Business Intelligence (BI), model klasifikasi Random Forest, dan LLM lokal sebagai penyusun rekomendasi yang dibatasi oleh evidence. Dashboard Streamlit menyatukan hasil tersebut untuk satu pelanggan yang dipilih pengguna.
+
+Data mencakup 8.000 pelanggan, 25.000 pesanan, 140 ringkasan produk, dan 75 agregat bulanan. Pada test set berjumlah 1.600 pelanggan dengan proporsi churn 8,94%, Random Forest memperoleh accuracy 0,863, precision churn 0,322, recall 0,483, F1 0,387, dan ROC-AUC 0,733. Pada ambang 0,50, model menangkap 69 dari 143 pelanggan churn aktual, dengan 145 false positive dan 74 false negative.
+
+**Kata kunci:** customer churn, business intelligence, Random Forest, LLM, Streamlit, responsible AI.
+
+# Pendahuluan
+
+Churn mengurangi nilai pelanggan jangka panjang dan membuat intervensi retensi tidak efisien bila semua pelanggan diperlakukan sama. Stakeholder yang dituju adalah manajer retensi atau CRM yang perlu menentukan pelanggan mana yang layak dihubungi serta tindakan awal yang relevan.
+
+BI digunakan untuk memahami pola pendapatan dan transaksi; ML memberi skor risiko pada tingkat pelanggan; LLM membantu mengomunikasikan bukti tersebut dalam bahasa operasional. LLM tidak digunakan untuk membuat prediksi maupun mencari fakta di luar data.
+
+Pertanyaan rekayasa yang dijawab adalah:
+
+1. Seberapa baik Random Forest membedakan pelanggan churn dibanding strategi mayoritas?
+2. Bagaimana threshold memengaruhi pelanggan yang dihubungi dan churn yang terlewat?
+3. Bagaimana rekomendasi LLM dapat dibatasi agar konsisten dengan data?
+
+Proyek ini adalah **track Reproduce**: pipeline referensi yang dapat dijalankan ulang, dengan fokus pada keterlacakan data, metrik, dan batas penggunaan model.
+
+# Data dan kualitas data
+
+## Provenance dan unit analisis
+
+| Item | Keterangan |
+|---|---|
+| Sumber | Dataset e-commerce bergaya Kaggle yang disertakan dalam repositori |
+| Snapshot data | 1 April 2026 |
+| Unit prediksi | Satu pelanggan pada customers.csv |
+| Target | churned (0 = tidak churn, 1 = churn) |
+| Tabel pendukung | Pesanan, ringkasan produk, dan revenue bulanan |
+| Jumlah pelanggan/pesanan | 8.000 / 25.000 |
+
+Fitur kategorikal meliputi negara, gender, tingkat keanggotaan, kategori preferensi, perangkat, metode pembayaran, dan kanal akuisisi. Fitur numerik mencakup umur, jumlah/nilai pesanan, recency, ulasan, retur, wishlist, serta status newsletter.
+
+## Temuan kualitas data
+
+Sebanyak 63,0% rating pelanggan pada orders.csv kosong. Pipeline model menggunakan median untuk fitur numerik dan modus untuk fitur kategorikal agar imputasi dipelajari dari data latih. Tingkat return transaksi adalah 8,08%. Churn merupakan kelas minoritas (8,94%), sehingga evaluasi memprioritaskan precision, recall, F1, dan ROC-AUC.
+
+Validasi agregasi menemukan monthly_revenue.csv hanya merangkum pesanan berstatus *Delivered*. Total revenue bulanan cocok dengan revenue delivered sebesar USD 2.585.126,50, dan kolom return_rate pada tabel ini selalu nol. Karena itu, analisis retur harus memakai orders.csv, bukan agregat bulanan.
+
+# Metode
+
+## Arsitektur
+
+~~~
+CSV pelanggan + transaksi
+        |
+        v
+validasi, cleaning, dan feature engineering ----> BI di Streamlit
+        |
+        v
+split train/test terstratifikasi (80/20, seed 42)
+        |
+        v
+Pipeline: imputasi + one-hot encoding + Random Forest
+        |
+        +----> probabilitas churn dan faktor global ---+
+                                                     |
+data pelanggan dan pesanan terbaru ----------------> LLM lokal
+                                                     |
+                                                     v
+                                         rekomendasi berbasis evidence
+~~~
+
+## Persiapan fitur dan pencegahan leakage
+
+Tanggal snapshot ditetapkan sebagai tanggal paling akhir pada data sumber. Pipeline menambahkan tenure pelanggan, orders per year, reviews per order, dan returns per order. Nilai kategorikal tidak dienkode sebelum split. Semua imputasi serta one-hot encoding berada di dalam scikit-learn Pipeline, sehingga statistik preprocessing tidak belajar dari test set. Dataset dibagi 80/20 secara terstratifikasi menurut target: 6.400 baris train dan 1.600 test.
+
+## Model dan baseline
+
+Model utama adalah RandomForestClassifier dengan 350 pohon, min_samples_leaf=3, class_weight="balanced", dan random_state=42. Penyeimbangan bobot kelas dipilih agar optimasi tidak hanya mengikuti kelas non-churn yang dominan.
+
+Baseline adalah strategi selalu memprediksi non-churn. Dengan 143 churn dari 1.600 data uji, baseline ini menghasilkan accuracy sekitar 0,911 tetapi recall churn dan F1 churn bernilai 0. Karena itu, baseline tampak lebih baik jika hanya accuracy yang dilihat, tetapi tidak menemukan pelanggan berisiko sama sekali.
+
+## Integrasi LLM
+
+vai_analyst.py membangun prompt untuk Ollama (llama3.2, temperature 0,2). Prompt menerima profil pelanggan, probabilitas model, maksimal lima pesanan terakhir, serta delapan faktor global model. Instruksi eksplisitnya: gunakan hanya fakta yang diberikan, jangan menganggap prediksi sebagai sebab-akibat, dan jangan mengarang motif atau perilaku masa depan. LLM berfungsi sebagai lapisan narasi dan saran, bukan sumber keputusan otomatis.
+
+# Hasil
+
+## Kinerja model
+
+| Model | Accuracy | Precision churn | Recall churn | F1 churn | ROC-AUC |
+|---|---:|---:|---:|---:|---:|
+| Baseline: selalu non-churn | 0,911 | 0,000 | 0,000 | 0,000 | 0,500 |
+| Random Forest | 0,863 | 0,322 | 0,483 | 0,387 | 0,733 |
+
+Confusion matrix model pada threshold 0,50 adalah:
+
+| Aktual / Prediksi | Non-churn | Churn |
+|---|---:|---:|
+| Non-churn | 1.312 | 145 |
+| Churn | 74 | 69 |
+
+Model mengorbankan sebagian accuracy baseline untuk menemukan 69 pelanggan churn. ROC-AUC 0,733 menunjukkan kemampuan pemeringkatan yang moderat, belum cukup untuk keputusan otomatis tanpa peninjauan bisnis.
+
+## Analisis threshold
+
+| Threshold | Precision | Recall | False positive | False negative |
+|---:|---:|---:|---:|---:|
+| 0,30 | 0,270 | 0,601 | 233 | 57 |
+| 0,50 | 0,322 | 0,483 | 145 | 74 |
+| 0,70 | 0,414 | 0,084 | 17 | 131 |
+
+Ambang 0,30 cocok bila biaya kehilangan pelanggan lebih besar daripada biaya menghubungi pelanggan yang ternyata tidak churn. Ambang 0,70 sangat selektif, tetapi melewatkan sebagian besar churn. Ambang operasional harus ditetapkan berdasarkan kapasitas kampanye dan biaya kontak, bukan semata-mata metrik model.
+
+## Faktor model dan interpretasi
+
+Faktor global teratas adalah days_since_last_purchase (importance 0,147), total_orders (0,089), total_spend_usd (0,077), orders_per_year (0,072), dan customer_tenure_days (0,062). Importance ini menjelaskan kontribusi relatif dalam Random Forest; ia tidak membuktikan bahwa suatu fitur menyebabkan churn pada individu tertentu.
+
+Kasus error yang perlu diperiksa lebih lanjut adalah 74 false negative: pelanggan yang churn tetapi tidak diprioritaskan pada threshold 0,50. Sebaliknya, 145 false positive akan menerima intervensi yang mungkin tidak perlu. Evaluasi lanjutan perlu menelusuri segmen, kualitas label, dan biaya kampanye untuk kedua kelompok tersebut.
+
+# Aplikasi dan penggunaan bertanggung jawab
+
+Dashboard Streamlit memiliki empat bagian: pemeriksaan tabel sumber, BI revenue dan kategori, prediksi pelanggan dengan slider threshold, serta LLM Analyst. Pengguna dapat melihat label aktual dalam konteks dataset untuk pembelajaran; dalam penggunaan produksi, label masa depan tentu tidak tersedia pada saat prediksi.
+
+Risiko utama meliputi ketidakterwakilan data, bias menurut negara/gender atau kanal akuisisi, dan automation bias ketika pengguna terlalu percaya pada skor atau narasi LLM. Kontrol yang disarankan adalah akses terbatas terhadap data pelanggan, pencatatan rekomendasi, peninjauan manusia sebelum kampanye, pemantauan drift, dan audit kinerja per segmen. Input LLM juga perlu disanitasi apabila kelak menerima teks bebas agar tidak rentan terhadap prompt injection.
+
+# Reproduksibilitas
+
+Jalankan perintah berikut dari folder simulation/:
+
+~~~bash
+pip install -r requirements.txt
+python data_prep.py
+python ml_model.py
+python vai_analyst.py --prompt-only
+streamlit run app.py
+~~~
+
+Artefak yang dihasilkan adalah customer_train.csv, customer_test.csv, model_metrics.json, feature_importance.csv, customer_predictions.csv, dan model pipeline. LLM penuh memerlukan Ollama aktif dan model llama3.2 telah diunduh.
+
+# Kesimpulan
+
+1. Random Forest menghasilkan ROC-AUC 0,733 dan recall churn 0,483 pada test set, sehingga dapat dipakai untuk pemeringkatan awal, bukan keputusan final.
+2. Baseline mayoritas mempunyai accuracy lebih tinggi tetapi tidak mendeteksi churn; metrik kelas minoritas wajib dilaporkan.
+3. Threshold mengubah trade-off secara tajam dan harus dipilih menurut biaya operasional.
+4. Pemeriksaan semantik agregat mencegah penggunaan monthly_revenue.return_rate yang tidak informatif untuk analisis return.
+5. LLM bernilai sebagai penerjemah evidence menjadi saran, dengan pembatasan prompt dan peninjauan manusia.
+
+# Referensi
+
+- Breiman, L. (2001). Random Forests. *Machine Learning*, 45, 5–32.
+- scikit-learn developers. *scikit-learn User Guide*.
+- Streamlit. *Streamlit Documentation*.
+- Ollama. *Ollama Documentation*.
