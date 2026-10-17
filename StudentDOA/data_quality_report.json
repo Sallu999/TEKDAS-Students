@@ -1,0 +1,21 @@
+{
+  "total_rows": 4424,
+  "total_columns": 37,
+  "target_distribution_counts": {
+    "Graduate": 2209,
+    "Dropout": 1421,
+    "Enrolled": 794
+  },
+  "target_distribution_pct": {
+    "Graduate": 49.93,
+    "Dropout": 32.12,
+    "Enrolled": 17.95
+  },
+  "missing_values_total": 0,
+  "average_age": 23.27,
+  "tuition_debtor_rate_pct": 11.93,
+  "scholarship_rate_pct": 24.84,
+  "data_quality_notes": "File Excel asli kehilangan titik desimal pada kolom nilai mata kuliah dan makroekonomi. data_prep.py telah menormalkannya kembali ke skala 0-20 (nilai akademik) dan persentase.",
+  "train_rows": 3539,
+  "test_rows": 885
+}

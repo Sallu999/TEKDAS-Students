@@ -1,0 +1,28 @@
+{
+  "model_type": "LogisticRegression",
+  "accuracy": 0.7243,
+  "macro_f1": 0.6872,
+  "weighted_f1": 0.7384,
+  "classes": [
+    "Dropout",
+    "Enrolled",
+    "Graduate"
+  ],
+  "confusion_matrix": [
+    [
+      197,
+      63,
+      24
+    ],
+    [
+      28,
+      99,
+      32
+    ],
+    [
+      15,
+      82,
+      345
+    ]
+  ]
+}
